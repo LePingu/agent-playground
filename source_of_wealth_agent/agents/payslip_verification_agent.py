@@ -14,7 +14,7 @@ try:
 except ImportError:
     fitz = None
 
-from source_of_wealth_agent.core.state import log_action
+from source_of_wealth_agent.core.state import log_action, AgentState, request_human_review # Added request_human_review
 
 class PayslipVerificationAgent:
     def __init__(self, model):
@@ -38,6 +38,26 @@ class PayslipVerificationAgent:
         if fitz is None:
             self.logger.warning("PyMuPDF (fitz) is not installed. PDF processing will be limited.")
             self.logger.warning("Install with: pip install pymupdf")
+
+    def queue_payslip_review(self, verification_result: Dict[str, Any], client_id: str) -> Dict[str, Any]:
+        """Queue a non-blocking human review request for payslip verification.
+        
+        Args:
+            verification_result: The payslip verification result containing issues
+            client_id: Client ID for the review
+            
+        Returns:
+            Dictionary with review request details
+        """
+        self.logger.info(f"Queueing payslip review for client {client_id}")
+        
+        # Use the request_human_review function to add to pending reviews
+        return request_human_review(
+            verification_type="payslip_verification_review",
+            client_id=client_id,
+            verification_data=verification_result,
+            issues=verification_result.get("issues_found", [])
+        )
 
     def find_payslip_document(self, client_id: str) -> Optional[str]:
         """Find payslip document for the given client_id"""
@@ -84,7 +104,7 @@ class PayslipVerificationAgent:
             self.logger.error(f"Error encoding document {doc_path}: {str(e)}")
             return None
 
-    def extract_payslip_information(self, doc_path: str) -> Dict[str, Any]:
+    async def extract_payslip_information(self, doc_path: str) -> Dict[str, Any]:
         """Extract information from payslip using the model"""
         # First try to extract text from PDF
         extracted_text = ""
@@ -143,13 +163,13 @@ class PayslipVerificationAgent:
                 # Use bind for image content if needed
                 if hasattr(self.model, 'bind'):
                     llm_with_doc_context = self.model.bind(images=[base64_doc])
-                    response = llm_with_doc_context.invoke(system_prompt + "\n\nPlease analyze this payslip document and extract the required information.")
+                    response = await llm_with_doc_context.ainvoke(system_prompt + "\n\nPlease analyze this payslip document and extract the required information.")
                 else:
-                    response = self.model.invoke(messages)
+                    response = await self.model.ainvoke(messages)
             else:
                 # Use text only if we have extracted text
                 prompt = f"{system_prompt}\n\nHere is the extracted text from the payslip:\n\n{extracted_text}\n\nPlease analyze this text and extract the required information."
-                response = self.model.invoke(prompt)
+                response = await self.model.ainvoke(prompt)
             
             # Extract JSON from the response
             content = response.content if hasattr(response, 'content') else response
@@ -234,7 +254,7 @@ class PayslipVerificationAgent:
         
         return verification_result
 
-    def run(self, state):
+    async def run(self, state: AgentState) -> AgentState: # Updated type hint for state
         client_id = state["client_id"]
         client_name = state.get("client_name", "Unknown")
         self.logger.info(f"📄 Verifying payslips for client: {client_id} ({client_name})")
@@ -254,12 +274,39 @@ class PayslipVerificationAgent:
             }
         else:
             # Step 2: Extract information from the payslip document
-            extracted_data = self.extract_payslip_information(payslip_path)
+            extracted_data = await self.extract_payslip_information(payslip_path)
             
             # Step 3: Verify the extracted information
             verification_result = self.verify_payslip(extracted_data)
 
+        # Step 3.5: Queue non-blocking human review if issues are found
+        if verification_result.get("issues_found"):
+            self.logger.info(f"Issues found in payslip for client {client_id}. Queueing human review.")
+            
+            # Queue the review in the state without blocking
+            review_request = self.queue_payslip_review(verification_result, client_id)
+            
+            # Add the review request to state
+            if "pending_reviews" not in state:
+                state["pending_reviews"] = []
+            state["pending_reviews"].extend(review_request.get("pending_reviews", []))
+            
+            # Mark verification result as requiring review
+            verification_result["requires_human_review"] = True
+            verification_result["verified"] = False  # Default to false until reviewed
+            
+            # Log the action
+            log_update = log_action(self.name, f"Payslip review queued for client {client_id}", 
+                        {"issues": verification_result.get("issues_found", [])})
+            
+            # Add log update to state
+            if "audit_log" in log_update:
+                if "audit_log" not in state:
+                    state["audit_log"] = []
+                state["audit_log"].extend(log_update["audit_log"])
+
+
         # Step 4: Update state with verification result
         state["payslip_verification"] = verification_result
-        log_action(state, self.name, "Payslip verification completed", verification_result)
+        log_action(self.name, "Payslip verification completed", verification_result)
         return state

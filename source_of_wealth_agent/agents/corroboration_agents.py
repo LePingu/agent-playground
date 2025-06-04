@@ -25,8 +25,7 @@ def employment_corroboration_agent(state: AgentState) -> AgentState:
     
     # Ensure we have the necessary data
     if "payslip_verification" not in state or "web_references" not in state:
-        return log_action(
-            state, 
+        return log_action( 
             "Employment_Corroboration_Agent", 
             "Employment corroboration skipped - missing data",
             {"error": "Missing required data"}
@@ -50,7 +49,7 @@ def employment_corroboration_agent(state: AgentState) -> AgentState:
     
     new_state = state.copy()
     new_state["employment_corroboration"] = result
-    return log_action(new_state, "Employment_Corroboration_Agent", "Employment corroboration completed", result)
+    return log_action("Employment_Corroboration_Agent", "Employment corroboration completed", result)
 
 
 def funds_corroboration_agent(state: AgentState) -> AgentState:
@@ -96,4 +95,4 @@ def funds_corroboration_agent(state: AgentState) -> AgentState:
     
     new_state = state.copy()
     new_state["funds_corroboration"] = result
-    return log_action(new_state, "Funds_Corroboration_Agent", "Source of funds corroboration completed", result)
+    return log_action( "Funds_Corroboration_Agent", "Source of funds corroboration completed", result)

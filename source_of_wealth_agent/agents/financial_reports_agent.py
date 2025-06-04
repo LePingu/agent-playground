@@ -20,5 +20,5 @@ class FinancialReportsAgent:
         }
 
         state.financial_reports = financial_data
-        log_action(state, self.name, "Financial reports analysis completed", financial_data)
+        log_action(self.name, "Financial reports analysis completed", financial_data)
         return state

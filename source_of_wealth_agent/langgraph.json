@@ -1,0 +1,21 @@
+{
+    "version": "1.0.0",
+    "type": "langgraph",
+    "name": "source_of_wealth_verification",
+    "description": "A multi-agent system for verifying and assessing source of wealth information for banking clients.",
+    "project_id": "sow-poc",
+    "metadata": {
+        "created": "2025-05-15T00:00:00Z",
+        "updated": "2025-05-15T00:00:00Z",
+        "version": "0.0.1",
+        "author": "Source of Wealth Agent Team"
+    },
+    "dependencies": [
+        "../",
+        "langchain_openai"
+    ],
+    "graphs": {
+        "main": "/workspaces/agent-playground/source_of_wealth_agent/graph_standalone.py:graph"
+    },
+    "env": "/workspaces/agent-playground/env/.env"
+}

@@ -1,0 +1,6 @@
+# This is a mock ID document for testing
+# In a real scenario, this would be a PDF containing identity information
+CLIENT_ID: CLIENT_123
+NAME: John Doe
+DOB: 1985-01-15
+ADDRESS: 123 Main Street, City, State

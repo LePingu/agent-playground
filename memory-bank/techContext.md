@@ -121,6 +121,11 @@ source_of_wealth_agent/
 - **Impact**: Workflow cannot be fully automated
 - **Mitigation**: Clear user interface for human input points, timeout handling
 
+### 6. Asynchronous Execution
+- **Constraint**: Workflow must support asynchronous execution for better performance
+- **Impact**: Requires async-compatible code throughout the system
+- **Mitigation**: Use of async/await pattern, proper error handling for async operations
+
 ## Dependencies
 
 ### Direct Dependencies
@@ -145,38 +150,52 @@ networkx>=3.0
 
 ## Tool Usage Patterns
 
-### 1. Agent Implementation Pattern
+### 1. Asynchronous Agent Implementation Pattern
 ```python
-def agent_name(state: AgentState) -> AgentState:
-    # Process the state
+async def agent_name(state: AgentState) -> AgentState:
+    # Process the state asynchronously
     # ...
     
-    # Update the state with results
-    new_state = state.copy()
-    new_state["result_key"] = result
+    # Create minimal state update
+    state_update = {"result_key": result}
     
-    # Log the action
-    return log_action(new_state, "Agent_Name", "Action description", result)
+    # Log the action and return the state update
+    return log_action(state_update, "Agent_Name", "Action description", result)
 ```
 
-### 2. Workflow Definition Pattern
+### 2. Dynamic Workflow Definition Pattern
 ```python
 # Create workflow
 workflow = StateGraph(AgentState)
 
 # Add nodes
-workflow.add_node("node_name", agent_function)
+workflow.add_node("risk_assessment_node", risk_assessment_agent)
+workflow.add_node("id_verification_node", id_agent.run)
+# ...add other nodes...
 
-# Add edges
-workflow.add_edge("source_node", "target_node")
+# Define workflow entry point - start with risk assessment for planning
+workflow.add_edge("__start__", "risk_assessment_node")
 
-# Add conditional edges
+# Add dynamic routing with conditional edges
 workflow.add_conditional_edges(
-    "source_node",
-    routing_function,
+    "risk_assessment_node",
+    route_after_risk_assessment,
     {
-        "condition1": "target_node1",
-        "condition2": "target_node2"
+        "id_verification_node": "id_verification_node",
+        "payslip_verification_node": "payslip_verification_node",
+        "web_references_node": "web_references_node",
+        "summarization_node": "summarization_node",
+        "human_advisory_node": "human_advisory_node"
+    }
+)
+
+# After each verification, check for issues and route to human review if needed
+workflow.add_conditional_edges(
+    "id_verification_node",
+    verification_needs_human_review,
+    {
+        "human_advisory_node": "human_advisory_node",
+        "risk_assessment_node": "risk_assessment_node"
     }
 )
 
@@ -184,20 +203,30 @@ workflow.add_conditional_edges(
 graph = workflow.compile()
 ```
 
-### 3. Workflow Execution Pattern
+### 3. Asynchronous Workflow Execution Pattern
 ```python
 # Initialize state
 initial_state = create_initial_state(client_id, client_name)
 
-# Execute workflow
-result = graph.invoke(initial_state)
+# Execute workflow asynchronously
+result = await graph.ainvoke(initial_state)
 ```
 
-### 4. Visualization Pattern
+### 4. Enhanced Visualization Pattern
 ```python
-# Record interaction
-tracer.record_interaction(from_agent, to_agent, data)
+# Start tracing with context
+tracer.start_tracing()
 
-# Visualize interactions
-tracer.visualize_interactions()
-tracer.display_execution_statistics()
+# Execute workflow with tracing
+try:
+    result = await graph.ainvoke(initial_state)
+    
+    # Generate visualizations
+    tracer.visualize_interactions()
+    tracer.display_execution_statistics()
+    
+    # Optional: save visualization to file
+    tracer.save_visualization("workflow_execution.html")
+finally:
+    # Always stop tracing
+    tracer.stop_tracing()

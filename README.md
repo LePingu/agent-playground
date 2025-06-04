@@ -11,6 +11,7 @@ This system automates the collection and assessment of client information to ver
 - **ID Verification**: Verifies client identity documents
 - **Payslip Verification**: Extracts and verifies information from payslips
 - **Web References Analysis**: Searches LinkedIn and financial news for client information
+- **Human-in-the-Loop**: Provides critical human oversight at key verification points
 - **Summarization**: Collates data from different verification steps
 - **Risk Assessment**: Evaluates verification results to determine risk level
 - **Report Generation**: Creates a comprehensive verification report
@@ -25,8 +26,9 @@ The system follows a modular, agent-based architecture organized into distinct l
 
 ### Agents Layer
 - **Verification Agents**: ID, payslip, and web references verification
+- **Human Advisory Agent**: Manages human review requests and approvals
+- **Risk Assessment Agent**: Performs risk analysis and enforces sequential verification
 - **Summarization Agent**: Collates data from verification agents
-- **Risk Assessment Agent**: Performs risk analysis
 - **Report Generation Agent**: Creates final formatted reports
 
 ### Workflow Layer
@@ -43,12 +45,20 @@ The system follows a modular, agent-based architecture organized into distinct l
 
 ## Workflow Structure
 
-The simplified workflow follows these steps:
+The workflow follows these steps with sequential enforcement and human reviews:
 
-1. **ID Verification** → **Payslip Verification** → **Web References Check**
-2. **Summarization** of all verification data
-3. **Risk Assessment** based on summarized data
-4. **Report Generation** for final output
+1. **Risk Assessment** creates a verification plan based on client profile
+2. **ID Verification** is performed first with human review if issues are found
+3. After ID verification completes successfully:
+   - **Payslip Verification**
+   - **Web References Check**
+   - **Financial Reports Analysis** (if needed)
+4. **Human Advisory** reviews results when issues are detected
+5. **Summarization** collates all verification data
+6. Final **Risk Assessment** evaluates overall verification results
+7. **Report Generation** creates the final detailed output
+
+See [Human-in-the-Loop Implementation](HUMAN_IN_THE_LOOP.md) for details about the human review process.
 
 ## Technical Implementation
 
@@ -62,7 +72,30 @@ The simplified workflow follows these steps:
 
 ## Usage
 
-### Basic Usage
+### Using the Command Line Interface
+
+The system can be run directly from the command line using the `main.py` script:
+
+```bash
+# Setup the environment first
+./setup.sh
+
+# Run with default settings
+python main.py
+
+# Run with tracing enabled
+python main.py --trace
+
+# Run using the LangGraph JSON configuration
+python main.py --use-config
+```
+
+Environment variables are loaded from `env/.env`. See:
+- [Environment Variables Guide](env/README.md) for configuration details
+- [Running Guide](RUNNING.md) for complete instructions
+- [LangGraph Configuration](source_of_wealth_agent/LANGGRAPH.md) for graph configuration details
+
+### Using Python API
 
 ```python
 from source_of_wealth_agent.workflow.runner import run_workflow
@@ -104,7 +137,7 @@ The system includes a comprehensive test suite organized in the `tests/` directo
 - `test_end_to_end.py`: End-to-end test of the entire workflow with mock agents
 - `test_simplified_workflow.py`: Test the simplified workflow execution
 - `test_agents.py`: Tests for individual verification agents
-- `test_human_review.py`: Tests for the human review process
+- `test_human_review.py`: Tests for the human review process and sequential verification enforcement
 - `basic_test.py`: Basic test for the summarization agent
 
 ### Running Tests

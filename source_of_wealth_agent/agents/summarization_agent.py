@@ -16,7 +16,8 @@ def summarization_agent(state: AgentState) -> AgentState:
     Agent that summarizes and collates information from various verification agents.
     
     This agent creates a consolidated view of the client's profile by extracting
-    key information from ID verification, payslip verification, and web references.
+    key information from the verification steps that were completed based on the
+    verification plan.
     
     Args:
         state: Current workflow state
@@ -29,6 +30,9 @@ def summarization_agent(state: AgentState) -> AgentState:
     # Create a new state to avoid modifying the original
     new_state = state.copy()
     
+    # Get verification plan to determine what was required
+    verification_plan = state.get("verification_plan", {})
+    
     # Extract key information from different sources
     summary = {
         "client_info": {
@@ -36,21 +40,32 @@ def summarization_agent(state: AgentState) -> AgentState:
             "client_name": state.get("client_name", "Unknown"),
             "verification_date": datetime.now().isoformat()
         },
+        "verification_plan": {
+            "id_verification_required": verification_plan.get("id_verification_required", True),
+            "payslip_verification_required": verification_plan.get("payslip_verification_required", False),
+            "web_references_required": verification_plan.get("web_references_required", True),
+            "financial_reports_required": verification_plan.get("financial_reports_required", False),
+        },
         "verification_status": {
             "id_verified": _check_verification_status(state, "id_verification", "verified"),
-            "payslip_verified": _check_verification_status(state, "payslip_verification", "verified"),
-            "web_references_verified": _check_verification_status(state, "web_references", "verified")
+            "payslip_verified": (_check_verification_status(state, "payslip_verification", "verified") 
+                                if verification_plan.get("payslip_verification_required", False) else "Not Required"),
+            "web_references_verified": _check_verification_status(state, "web_references", "verified"),
+            "financial_reports_verified": (_check_verification_status(state, "financial_reports", "verified")
+                                          if verification_plan.get("financial_reports_required", False) else "Not Required"),
         },
         "identity_details": _extract_identity_details(state),
-        "employment_details": _extract_employment_details(state),
+        "employment_details": _extract_employment_details(state) if verification_plan.get("payslip_verification_required", False) else {"available": False, "reason": "Not required based on verification plan"},
         "web_presence": _extract_web_presence(state),
+        "financial_reports": _extract_financial_reports(state) if verification_plan.get("financial_reports_required", False) else {"available": False, "reason": "Not required based on verification plan"},
         "risk_indicators": _extract_risk_indicators(state)
     }
     
     # Add the summary to the state
-    new_state["verification_summary"] = summary
-    
-    return log_action(new_state, "Summarization_Agent", "Verification data summarized", summary)
+    state["verification_summary"] = summary
+    state["risk_assessment_action"] = "perform_assessment"
+    log_action( "Summarization_Agent", "Verification data summarized", summary)
+    return state
 
 
 def _check_verification_status(state: AgentState, key: str, status_field: str) -> bool:
@@ -120,6 +135,22 @@ def _extract_web_presence(state: AgentState) -> Dict[str, Any]:
         "top_mentions": processed_mentions[:3],  # Just include the first 3 mentions
         "risk_flags": web_data.get("risk_flags", []),
         "search_date": web_data.get("search_date", datetime.now().isoformat())
+    }
+
+
+def _extract_financial_reports(state: AgentState) -> Dict[str, Any]:
+    """Extract information from financial reports if available."""
+    if "financial_reports" not in state:
+        return {"available": False}
+    
+    financial_data = state["financial_reports"]
+    return {
+        "available": True,
+        "reports_analyzed": financial_data.get("reports_analyzed", []),
+        "annual_income_range": financial_data.get("annual_income_range", "Unknown"),
+        "investment_assets": financial_data.get("investment_assets", "Unknown"),
+        "credit_score": financial_data.get("credit_score", "Unknown"),
+        "analysis_date": financial_data.get("analysis_date", datetime.now().isoformat())
     }
 
 

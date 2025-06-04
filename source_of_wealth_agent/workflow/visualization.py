@@ -59,6 +59,16 @@ class AgentInteractionTracer:
             self.agent_activities[to_agent] = []
         self.agent_activities[to_agent].append((elapsed, f"Received from {from_agent}"))
     
+    def stop_tracing(self):
+        """Stop the current tracing session and report duration."""
+        if self.start_time is None:
+            print("⚠️ No tracing session was active")
+            return
+            
+        duration = time.time() - self.start_time
+        print(f"📊 Tracing completed. Duration: {duration:.2f} seconds")
+        self.start_time = None
+    
     def visualize_interactions(self):
         """Generate and display visualizations of agent interactions."""
         if not self.interactions:

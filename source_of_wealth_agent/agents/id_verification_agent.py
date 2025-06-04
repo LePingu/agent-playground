@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from io import BytesIO
 import os
@@ -11,10 +12,11 @@ from langchain_ollama import OllamaLLM
 from langchain.schema import HumanMessage, SystemMessage, ChatMessage
 from PIL import Image
 
-from source_of_wealth_agent.core.state import log_action
+from source_of_wealth_agent.core.mock_results.id_verification_results import get_mock_id_verification_result
+from source_of_wealth_agent.core.state import log_action, AgentState # Added AgentState
 
 class IDVerificationAgent:
-    def __init__(self, model: OllamaLLM):
+    def __init__(self, model):
         self.name = "ID_Verification_Agent"
         self.model = model
         self.logger = logging.getLogger(self.name)
@@ -64,10 +66,10 @@ class IDVerificationAgent:
 
     async def extract_id_information(self, image_path: str) -> Dict[str, Any]:
         """Use Ollama Llama model to extract information from ID document"""
-        base64_image = self.encode_image(image_path)
-        if not base64_image:
-            return {"verified": False, "error": "Failed to encode image"}
-        
+        # base64_image = await asyncio.to_thread(self.encode_image(image_path))
+        # if not base64_image:
+        #     return {"verified": False, "error": "Failed to encode image"}
+        base64_image = None
         try:
             # Create prompt for vision model
             system_prompt = """You are an expert ID document analyzer. 
@@ -99,79 +101,19 @@ class IDVerificationAgent:
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=[
-                    {"type": "text", "text": "Please analyze this ID document and extract the required information."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    {"type": "text", "text": "Please analyze this ID document image and extract the required information."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}} # Ensure correct MIME type
                 ])
             ]
             
-            response = await self.model.ainvoke(messages)
-            
-            # Extract JSON from the response
-            content = response.content
-            # Look for JSON in the content (it might be wrapped in markdown code blocks)
-            if "```json" in content:
-                json_str = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                json_str = content.split("```")[1].split("```")[0].strip()
+            # Use bind for image content if needed
+            if hasattr(self.model, 'bind'):
+                llm_with_image_context = self.model.bind(images=[base64_image])
+                response = await llm_with_image_context.ainvoke(system_prompt + "\n\nPlease analyze this ID document image and extract the required information.")
             else:
-                json_str = content.strip()
-                
-            extracted_data = json.loads(json_str)
-            self.logger.info(f"Successfully extracted information from ID document")
-            
-            return extracted_data
-        except Exception as e:
-            self.logger.error(f"Error extracting information from ID document: {str(e)}")
-            return {"verified": False, "error": str(e)}
-
-    def extract_id_information_sync(self, image_path: str) -> Dict[str, Any]:
-        """Use Ollama Llama model to extract information from ID document (synchronous version)"""
-        base64_image = self.encode_image(image_path)
-        if not base64_image:
-            return {"verified": False, "error": "Failed to encode image"}
-        
-        try:
-            # Create prompt for vision model
-            system_prompt = """You are an expert ID document analyzer. 
-            Extract the following information from the ID document image:
-            1. Document type (Passport, Driver's License, National ID, etc.)
-            2. Full name
-            3. Date of birth
-            4. Nationality
-            5. Document number
-            6. Issue date
-            7. Expiry date
-            8. Any security features you can identify
-            9. Potential issues or signs of tampering
-            
-            Format your response as JSON with the following structure:
-            {
-                "document_type": "string",
-                "full_name": "string",
-                "date_of_birth": "YYYY-MM-DD",
-                "nationality": "string",
-                "document_number": "string",
-                "issue_date": "YYYY-MM-DD",
-                "expiry_date": "YYYY-MM-DD",
-                "security_features": ["feature1", "feature2"],
-                "potential_issues": ["issue1", "issue2"] 
-            }"""
-            
-            # Call the model with image content
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=[
-                    {"type": "text", "text": "Please analyze this ID document and extract the required information."},
-                    # {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                ])
-            ]
-            
-            # Use synchronous invoke instead of ainvoke
-            llm_with_image_context = self.model.bind(images=[base64_image])
-            response = llm_with_image_context.invoke(messages)
+                response = await self.model.ainvoke(messages)
             
             # Extract JSON from the response
-            # Handle both string responses and object responses with .content attribute
             content = response.content if hasattr(response, 'content') else response
             
             # Look for JSON in the content (it might be wrapped in markdown code blocks)
@@ -183,39 +125,44 @@ class IDVerificationAgent:
                 json_str = content.strip()
                 
             extracted_data = json.loads(json_str)
-            self.logger.info(f"Successfully extracted information from ID document")
-            
+            self.logger.info(f"Successfully extracted information from ID document {image_path}")
             return extracted_data
+            
         except Exception as e:
-            self.logger.error(f"Error extracting information from ID document: {str(e)}")
+            self.logger.error(f"Error extracting information from ID: {str(e)}")
             return {"verified": False, "error": str(e)}
 
-    def verify_document(self, extracted_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Verify the extracted document information"""
+    async def verify_id(self, extracted_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Verify the extracted ID information"""
         issues_found = []
         
-        # Check for expiry date
-        if "expiry_date" in extracted_data:
+        # Check for required fields
+        required_fields = ["full_name", "date_of_birth", "document_number", "expiry_date"]
+        for field in required_fields:
+            if field not in extracted_data or not extracted_data[field]:
+                issues_found.append(f"Missing {field.replace('_', ' ')}")
+        
+        # Check expiry date
+        if "expiry_date" in extracted_data and extracted_data["expiry_date"]:
             try:
                 expiry_date = datetime.strptime(extracted_data["expiry_date"], "%Y-%m-%d")
                 if expiry_date < datetime.now():
                     issues_found.append("ID document has expired")
             except ValueError:
                 issues_found.append("Invalid expiry date format")
-        else:
-            issues_found.append("No expiry date found")
-            
+        
         # Add any issues identified by the model
         if "potential_issues" in extracted_data and extracted_data["potential_issues"]:
             issues_found.extend(extracted_data["potential_issues"])
-            
+        
         # Prepare verification result
         verification_result = {
-            "verified": len(issues_found) == 0,
+            # "verified": len(issues_found) == 0,
+            "verified": False,
             "id_type": extracted_data.get("document_type", "Unknown"),
-            "document_number": extracted_data.get("document_number", "Unknown"),
             "full_name": extracted_data.get("full_name", "Unknown"),
-            "nationality": extracted_data.get("nationality", "Unknown"),
+            "date_of_birth": extracted_data.get("date_of_birth", "Unknown"),
+            "document_number": extracted_data.get("document_number", "Unknown"),
             "id_expiry": extracted_data.get("expiry_date", "Unknown"),
             "issues_found": issues_found,
             "verification_date": datetime.now().isoformat()
@@ -223,42 +170,7 @@ class IDVerificationAgent:
         
         return verification_result
 
-    def get_human_approval(self, verification_result: Dict[str, Any], client_name: str) -> bool:
-        """
-        Get human approval for the ID verification result.
-        
-        Args:
-            verification_result: The ID verification result to review
-            client_name: The name of the client
-            
-        Returns:
-            True if approved, False otherwise
-        """
-        print("\n" + "="*60)
-        print(f"🔍 ID VERIFICATION REVIEW FOR: {client_name}")
-        print("="*60)
-        
-        print(f"\n📄 DOCUMENT DETAILS")
-        print(f"  Type:         {verification_result['id_type']}")
-        print(f"  Number:       {verification_result['document_number']}")
-        print(f"  Full Name:    {verification_result['full_name']}")
-        print(f"  Nationality:  {verification_result['nationality']}")
-        print(f"  Expiry Date:  {verification_result['id_expiry']}")
-        
-        if verification_result["issues_found"]:
-            print(f"\n⚠️  ISSUES DETECTED ({len(verification_result['issues_found'])})")
-            for i, issue in enumerate(verification_result["issues_found"], 1):
-                print(f"  {i}. {issue}")
-        else:
-            print("\n✅ No issues detected")
-            
-        print(f"\nSystem verification result: {'✅ PASSED' if verification_result['verified'] else '❌ FAILED'}")
-        
-        print("\n" + "-"*60)
-        response = input("Do you approve this ID verification? (yes/no): ").lower().strip()
-        return response == "yes" or response == "y"
-        
-    def run(self, state):
+    async def run(self, state: AgentState) -> AgentState: # Updated type hint for state
         client_id = state["client_id"]
         client_name = state.get("client_name", "Unknown")
         self.logger.info(f"🔍 Verifying ID for client: {client_id} ({client_name})")
@@ -276,25 +188,22 @@ class IDVerificationAgent:
                 "verification_date": datetime.now().isoformat()
             }
         else:
-            # Step 2: Extract information from the ID document using Llama model
-            # Since we can't use await in a synchronous function, use synchronous invoke instead of ainvoke
-            extracted_data = self.extract_id_information_sync(id_document_path)
-            
-            # Step 3: Verify the extracted information
-            verification_result = self.verify_document(extracted_data)
+            if state.get('mocked'):
+                verification_result = get_mock_id_verification_result(client_id="12345", client_name="Hatim Nourbay")
+            else:
+                # Step 2: Extract information from the ID document
+                extracted_data = await self.extract_id_information(id_document_path)
 
-        # Step 4: Update state with verification result
+                # Step 3: Verify the extracted information
+                verification_result = await self.verify_id(extracted_data)
+
+            # Step 4: Log action and prepare for potential human review by orchestrator
+            # The 'verified' status here is based on automated checks.
+            # Human review will be handled by the HumanAdvisoryAgent if routed by the orchestrator.
+            self.logger.info(f"Automated ID verification completed for client {client_id}. Issues found: {verification_result.get('issues_found')}")
+
+        # Step 5: Update state with verification result
         state["id_verification"] = verification_result
-        log_action(state, self.name, "ID verification completed", verification_result)
+        log_action(self.name, "ID verification automated checks completed", verification_result)
         
-        # Step 5: Human-in-the-loop verification
-        human_approved = self.get_human_approval(verification_result, client_name)
-        state["id_verification"]["human_approved"] = human_approved
-        state["id_verification"]["human_review_date"] = datetime.now().isoformat()
-        
-        if human_approved:
-            log_action(state, self.name, "Human approved ID verification", {"approved": True})
-        else:
-            log_action(state, self.name, "Human rejected ID verification", {"approved": False})
-            
         return state

@@ -48,13 +48,13 @@ graph TD
 
 ## Key Technical Decisions
 
-### 1. State-Based Agent Communication
+### 1. Enhanced State-Based Agent Communication
 
-**Decision**: Use a shared state object that flows through the agent workflow.
+**Decision**: Use a shared state object with annotated types for efficient updates.
 
 **Rationale**:
 - Provides a clear, structured way to pass information between agents
-- Enables easy tracking of changes through the workflow
+- Enables efficient state updates without copying the entire state
 - Simplifies debugging and visualization
 - Aligns with LangGraph's state-based workflow model
 
@@ -65,11 +65,22 @@ class AgentState(TypedDict, total=False):
     client_id: str
     client_name: Optional[str]
     client_data: Dict[str, Any]
+    messages: Annotated[List[str], operator.add]  # Multiple agents can add messages
     
     # Verification results
-    id_verification: Optional[IDVerificationResult]
-    payslip_verification: Optional[PayslipVerificationResult]
+    id_verification: IDVerificationResult
+    payslip_verification: PayslipVerificationResult
     # ...other fields...
+    
+    # Verification planning and tracking
+    verification_plan: VerificationPlan
+    current_verification_step: str
+    completed_verifications: Annotated[List[str], operator.add]
+    
+    # Process management
+    audit_log: Annotated[List[AuditLogEntry], operator.add]
+    action_history: Annotated[List[Dict[str, Any]], operator.add]
+    errors: Annotated[List[Dict[str, Any]], operator.add]
 ```
 
 ### 2. Dual-Model Approach
@@ -97,58 +108,102 @@ ollama_model = initialize_ollama_model(
 )
 ```
 
-### 3. Directed Graph Workflow
+### 3. Dynamic Directed Graph Workflow
 
-**Decision**: Use LangGraph's StateGraph for workflow orchestration.
+**Decision**: Use LangGraph's StateGraph with dynamic routing for workflow orchestration.
 
 **Rationale**:
 - Provides a clear, visual representation of the workflow
-- Enables conditional branching based on state
+- Enables dynamic verification planning based on risk assessment
+- Enforces sequential verification for critical steps
+- Supports conditional branching based on verification results
 - Simplifies complex agent interactions
 - Supports tracing and visualization
 
 **Implementation**:
 ```python
 workflow = StateGraph(AgentState)
+
+# Add nodes
+workflow.add_node("risk_assessment_node", risk_assessment_agent)
 workflow.add_node("id_verification_node", id_agent.run)
 # ...add other nodes...
-workflow.add_edge("id_verification_node", "payslip_verification_node")
-# ...add other edges...
+
+# Define workflow entry point - start with risk assessment for planning
+workflow.add_edge("__start__", "risk_assessment_node")
+
+# Risk assessment node determines the next verification step
 workflow.add_conditional_edges(
-    "human_review_node",
-    route_after_human_review,
+    "risk_assessment_node",
+    route_after_risk_assessment,
     {
-        "employment_corroboration_node": "employment_corroboration_node",
-        "funds_corroboration_node": "funds_corroboration_node",
+        "id_verification_node": "id_verification_node",
+        "payslip_verification_node": "payslip_verification_node",
+        "web_references_node": "web_references_node",
+        "financial_reports_node": "financial_reports_node",
+        "summarization_node": "summarization_node",
+        "human_advisory_node": "human_advisory_node"
+    }
+)
+
+# After each verification, check for issues and route to human review if needed
+workflow.add_conditional_edges(
+    "id_verification_node",
+    verification_needs_human_review,
+    {
+        "human_advisory_node": "human_advisory_node",
         "risk_assessment_node": "risk_assessment_node"
     }
 )
 ```
 
-### 4. Human-in-the-Loop Design
+### 4. Enhanced Human-in-the-Loop Design
 
-**Decision**: Implement explicit human approval steps for critical verification points.
+**Decision**: Implement dynamic routing to human review based on verification issues.
 
 **Rationale**:
 - Ensures human oversight for important decisions
+- Routes to human review only when issues are detected
 - Combines automation efficiency with human judgment
 - Addresses regulatory requirements for human review
 - Builds trust in the system's recommendations
 
 **Implementation**:
 ```python
-def human_advisory_agent(state: AgentState) -> AgentState:
-    # ...
-    if "employment_corroboration" in state and "employment_corroboration" not in state.get("human_approvals", {}):
-        print("\n===== HUMAN INPUT REQUIRED: Employment Corroboration =====")
-        print(f"Employment corroboration result: {json.dumps(state['employment_corroboration'], indent=2)}")
-        decision = input("Approve this check? (yes/no): ").lower().strip()
-        approved = decision == "yes"
+def verification_needs_human_review(state: AgentState) -> str:
+    """
+    Determine if a verification step needs human review based on issues found.
+    ID verification is a critical first step that blocks all other steps,
+    so its issues are always prioritized for human review.
+    """
+    # Handle ID verification issues with highest priority
+    if "id_verification" in state and state["id_verification"].get("issues_found"):
+        print("⚠️ CRITICAL: ID verification issues detected - requesting immediate human review")
+        # Mark this as requiring special attention since it blocks the entire workflow
+        state["id_verification_critical_issues"] = True
+        return "human_advisory_node"
+    
+    # Only check other verification issues if ID verification was successful
+    # or has been approved by human override - this enforces the sequential requirement
+    id_verified = state.get("id_verification", {}).get("verified", False)
+    human_approved_id = state.get("human_approvals", {}).get("id_verification", {}).get("approved", False)
+    
+    if id_verified or human_approved_id:
+        if "payslip_verification" in state and state["payslip_verification"].get("issues_found"):
+            return "human_advisory_node"
         
-        if "human_approvals" not in new_state:
-            new_state["human_approvals"] = {}
-        new_state["human_approvals"]["employment_corroboration"] = approved
-    # ...
+        # Check other verification types...
+    
+    # If no human review needed, return to risk assessment for next steps
+    return "risk_assessment_node"
+```
+
+```python
+class HumanApprovalDetail(TypedDict):
+    approved: bool
+    review_date: str
+    issues_at_review: Optional[List[str]]
+    reviewer_comments: Optional[str]  # Optional field for comments
 ```
 
 ### 5. Comprehensive Tracing and Visualization
@@ -182,50 +237,78 @@ class AgentInteractionTracer:
 
 ## Component Relationships
 
-### Agent Interaction Flow
-
-```mermaid
-graph LR
-    ID[ID Verification] --> Payslip[Payslip Verification]
-    Payslip --> Web[Web References]
-    Web --> Financial[Financial Reports]
-    Financial --> Employment[Employment Corroboration]
-    Employment --> Human[Human Review]
-    Human -->|Approved| Funds[Funds Corroboration]
-    Funds --> Human
-    Human -->|All Approved| Risk[Risk Assessment]
-    Risk --> Report[Report Generation]
-```
-
-### Data Flow
+### Dynamic Agent Interaction Flow
 
 ```mermaid
 graph TD
-    ClientData[Client Data] --> IDVerification[ID Verification]
-    ClientData --> PayslipVerification[Payslip Verification]
+    Start([Start]) --> Risk[Risk Assessment]
+    Risk -->|Plan Verification| ID[ID Verification]
+    ID -->|Issues Found| Human[Human Review]
+    ID -->|No Issues| Risk
+    
+    Risk -->|After ID Verified| Payslip[Payslip Verification]
+    Payslip -->|Issues Found| Human
+    Payslip -->|No Issues| Risk
+    
+    Risk -->|After Payslip Verified| Web[Web References]
+    Web -->|Issues Found| Human
+    Web -->|No Issues| Risk
+    
+    Risk -->|After Web Verified| Financial[Financial Reports]
+    Financial -->|Issues Found| Human
+    Financial -->|No Issues| Risk
+    
+    Human --> Risk
+    
+    Risk -->|All Verifications Complete| Summary[Summarization]
+    Summary --> Risk
+    Risk -->|Final Assessment| Report[Report Generation]
+    Report --> End([End])
+```
+
+### Enhanced Data Flow
+
+```mermaid
+graph TD
+    ClientData[Client Data] --> RiskAssessment[Risk Assessment]
+    RiskAssessment --> VerificationPlan[Verification Plan]
+    
+    VerificationPlan --> IDVerification[ID Verification]
+    VerificationPlan --> PayslipVerification[Payslip Verification]
+    VerificationPlan --> WebReferences[Web References]
+    VerificationPlan --> FinancialReports[Financial Reports]
     
     IDVerification --> VerificationResults[Verification Results]
     PayslipVerification --> VerificationResults
-    WebReferences[Web References] --> VerificationResults
-    FinancialReports[Financial Reports] --> VerificationResults
+    WebReferences --> VerificationResults
+    FinancialReports --> VerificationResults
     
-    VerificationResults --> Corroboration[Corroboration Analysis]
-    Corroboration --> HumanReview[Human Review]
-    HumanReview --> RiskAssessment[Risk Assessment]
-    RiskAssessment --> FinalReport[Final Report]
+    VerificationResults --> Summarization[Summarization]
+    Summarization --> FinalRiskAssessment[Final Risk Assessment]
+    FinalRiskAssessment --> FinalReport[Final Report]
+    
+    IDVerification -->|Issues| HumanReview[Human Review]
+    PayslipVerification -->|Issues| HumanReview
+    WebReferences -->|Issues| HumanReview
+    FinancialReports -->|Issues| HumanReview
+    
+    HumanReview --> RiskAssessment
 ```
 
 ## Critical Implementation Paths
 
-### 1. Verification Workflow
-- ID Verification → Payslip Verification → Web References → Financial Reports
+### 1. Dynamic Verification Planning
+- Risk Assessment → Verification Plan → Sequential Verification Steps
 
-### 2. Corroboration Workflow
-- Employment Corroboration → Human Review → Funds Corroboration → Human Review
+### 2. Sequential Verification Workflow
+- ID Verification (mandatory first step) → Payslip Verification → Web References → Financial Reports
 
-### 3. Assessment Workflow
-- Risk Assessment → Report Generation
+### 3. Human Review Workflow
+- Verification Step → Issue Detection → Human Review → Risk Assessment
 
-### 4. Human Oversight Path
-- Employment Corroboration → Human Review
-- Funds Corroboration → Human Review
+### 4. Final Assessment Workflow
+- Summarization → Final Risk Assessment → Report Generation
+
+### 5. Human Oversight Path
+- ID Verification Issues → Human Review (highest priority)
+- Other Verification Issues → Human Review (only after ID verification)

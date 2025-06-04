@@ -45,25 +45,3 @@ def trace_agent_call(agent_function: Callable, agent_name: str) -> Callable:
         return result
     
     return wrapper
-
-
-def create_traceable_workflow(workflow_factory: Callable, *args, **kwargs) -> Callable:
-    """
-    Create a traceable version of a workflow.
-    
-    Args:
-        workflow_factory: A function that creates a workflow
-        *args: Arguments to pass to the workflow factory
-        **kwargs: Keyword arguments to pass to the workflow factory
-        
-    Returns:
-        A function that creates a traceable workflow
-    """
-    def create_wrapped_workflow():
-        # Create the workflow graph from the factory
-        workflow = workflow_factory(*args, **kwargs)
-        
-        # Return the workflow
-        return workflow
-    
-    return create_wrapped_workflow
