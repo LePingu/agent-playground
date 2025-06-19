@@ -2,13 +2,20 @@
 
 ## System Architecture
 
-The Source of Wealth Multi-Agent System follows a modular, agent-based architecture organized into distinct layers:
+The Source of Wealth Multi-Agent System follows a modular, agent-based architecture organized into distinct layers with a production-ready CLI interface:
 
 ```mermaid
 graph TD
+    subgraph CLI["CLI Layer (NEW)"]
+        CLICommand[sow-agent CLI]
+        CLIValidation[Document Validation]
+        CLIOutput[JSON/Console Output]
+    end
+    
     subgraph Core
         State[State Management]
         Models[Model Initialization]
+        Config[Configuration Framework]
     end
     
     subgraph Agents
@@ -25,30 +32,68 @@ graph TD
         Runner[Runner]
     end
     
+    CLI --> Core
     Core --> Agents
     Agents --> Workflow
     Workflow --> Execution[Execution]
 ```
 
+### CLI Layer (NEW)
+- **sow-agent CLI**: Complete command-line interface with Click framework
+- **Document Validation**: File existence and readability verification
+- **JSON/Console Output**: Structured reporting and user-friendly display
+
 ### Core Layer
-- **State Management**: Defines the structure of the state that flows through the system and provides utilities for state manipulation.
-- **Model Initialization**: Handles the initialization and configuration of language models (OpenRouter and Ollama).
+- **State Management**: Enhanced SOW state with document handling and framework integration
+- **Model Initialization**: Handles the initialization and configuration of language models (OpenRouter and Ollama)
+- **Configuration Framework**: Integrated with agent playground configuration system
 
 ### Agents Layer
-- **Utility Agents**: Specialized agents for verification tasks (ID, payslip, web references, financial reports).
-- **Helper Agents**: Agents that coordinate data and create reports.
-- **Functional Agents**: Agents that perform analysis tasks (employment corroboration, funds corroboration, risk assessment).
-- **Advisory Agent**: Human-in-the-loop agent that manages human oversight.
+- **Utility Agents**: Specialized agents for verification tasks (ID, payslip, web references, financial reports)
+- **Helper Agents**: Agents that coordinate data and create reports
+- **Functional Agents**: Agents that perform analysis tasks (employment corroboration, funds corroboration, risk assessment)
+- **Advisory Agent**: Human-in-the-loop agent that manages human oversight
 
 ### Workflow Layer
-- **Orchestration**: Defines the workflow graph and execution flow between agents.
-- **Tracing**: Provides tracing capabilities for monitoring agent interactions.
-- **Visualization**: Generates visualizations of the workflow and results.
-- **Runner**: Executes the workflow with or without tracing.
+- **Orchestration**: Defines the workflow graph and execution flow between agents
+- **Tracing**: Provides tracing capabilities for monitoring agent interactions
+- **Visualization**: Generates visualizations of the workflow and results
+- **Runner**: Executes the workflow with or without tracing
 
 ## Key Technical Decisions
 
-### 1. Enhanced State-Based Agent Communication
+### 1. **NEW**: CLI Integration Pattern
+
+**Decision**: Implement a complete CLI interface using Click framework with proper entry point configuration.
+
+**Rationale**:
+- Provides production-ready interface for banking systems
+- Enables automation and batch processing
+- Standardizes input validation and output formatting
+- Integrates seamlessly with existing workflow infrastructure
+
+**Implementation**:
+```python
+@click.group()
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.pass_context
+def main(ctx, verbose):
+    """Source of Wealth (SOW) Agent CLI."""
+    ctx.ensure_object(dict)
+    ctx.obj['verbose'] = verbose
+
+@main.command()
+@click.argument('client_id')
+@click.argument('client_name')
+@click.option('--id', 'id_document', type=click.Path(exists=True))
+@click.option('--payslip', type=click.Path(exists=True))
+@click.option('--output', '-o', type=click.Path())
+def verify(ctx, client_id, client_name, id_document, payslip, output):
+    """Verify client's source of wealth through document analysis."""
+    # Document validation and workflow execution
+```
+
+### 2. Enhanced State-Based Agent Communication
 
 **Decision**: Use a shared state object with annotated types for efficient updates.
 
@@ -312,3 +357,53 @@ graph TD
 ### 5. Human Oversight Path
 - ID Verification Issues → Human Review (highest priority)
 - Other Verification Issues → Human Review (only after ID verification)
+
+## **NEW**: CLI Usage Patterns
+
+### 1. Basic Verification Pattern
+```bash
+# Single client verification with essential documents
+sow-agent verify CLIENT_123 "John Doe" --id documents/id.pdf --payslip documents/payslip.pdf
+```
+
+### 2. Comprehensive Verification Pattern
+```bash
+# Full verification with all supported document types
+sow-agent verify CLIENT_456 "Jane Smith" \
+  --id id.pdf \
+  --payslip payslip.pdf \
+  --bank-statement statement.pdf \
+  --employment-letter employment.pdf \
+  --tax-document tax.pdf \
+  --output report.json
+```
+
+### 3. Batch Processing Pattern
+```bash
+# Process multiple clients in sequence
+for client in clients.txt; do
+  sow-agent verify $client "$(lookup_name $client)" \
+    --id "documents/${client}/id.pdf" \
+    --payslip "documents/${client}/payslip.pdf" \
+    --output "reports/${client}.json"
+done
+```
+
+### 4. System Integration Pattern
+```bash
+# Integration with banking systems
+sow-agent verify $CLIENT_ID "$CLIENT_NAME" \
+  --id "$DOCUMENT_PATH/id.pdf" \
+  --payslip "$DOCUMENT_PATH/payslip.pdf" \
+  --output "$REPORT_PATH/${CLIENT_ID}.json" && \
+process_report "$REPORT_PATH/${CLIENT_ID}.json"
+```
+
+### 5. Debugging and Monitoring Pattern
+```bash
+# Verbose execution for troubleshooting
+sow-agent --verbose verify CLIENT_789 "Bob Johnson" \
+  --id id.pdf \
+  --payslip payslip.pdf \
+  --output debug_report.json 2>&1 | tee verification.log
+```

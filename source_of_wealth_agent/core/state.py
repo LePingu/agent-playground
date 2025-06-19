@@ -1,44 +1,44 @@
-"""
-State management classes and functions for the Source of Wealth Agent system.
-"""
-
-import operator
+from typing import TypedDict, Optional, List, Dict, Any, Annotated
 from datetime import datetime
-from typing import Dict, List, Any, Optional, TypedDict, Union, Annotated
 
-# Define state management using TypedDict for better type safety
-class VerificationResult(TypedDict, total=False):
+class IDVerificationResult(TypedDict, total=False):
     verified: bool
+    confidence: float
+    issues_found: bool
+    issues: List[str]
     verification_date: str
-    # Additional fields can be added by specific verifications
 
-class IDVerificationResult(VerificationResult):
-    id_expiry: str
-    id_type: str
-    issues_found: List[str]
+class PayslipVerificationResult(TypedDict, total=False):
+    verified: bool
+    confidence: float
+    issues_found: bool
+    issues: List[str]
+    verification_date: str
 
-class PayslipVerificationResult(VerificationResult):
-    monthly_income: float
-    employer: str
-    position: str
+class WebReferenceResult(TypedDict, total=False):
+    verified: bool
+    confidence: float
+    issues_found: bool
+    issues: List[str]
+    verification_date: str
 
-class WebReferenceResult(VerificationResult):
-    mentions: List[Dict[str, str]]
-    risk_flags: List[str]
-    search_date: str
+class FinancialReportResult(TypedDict, total=False):
+    verified: bool
+    confidence: float
+    issues_found: bool
+    issues: List[str]
+    verification_date: str
 
-class FinancialReportResult(VerificationResult):
-    reports_analyzed: List[str]
-    annual_income_range: str
-    investment_assets: str
-    credit_score: str
-    analysis_date: str
+class VerificationPlan(TypedDict, total=False):
+    steps: List[str]
+    priority: Dict[str, float]
+    next_step: str
 
-class CorroborationResult(TypedDict, total=False):
-    consistent: bool
-    confidence: str
-    corroboration_date: str
-    # Additional fields can be added by specific corroborations
+class AuditLogEntry(TypedDict, total=False):
+    timestamp: str
+    agent: str
+    action: str
+    result: Dict[str, Any]
 
 class FundCorroborationResult(CorroborationResult):
     income_consistent: bool

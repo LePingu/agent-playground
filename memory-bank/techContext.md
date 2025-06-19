@@ -9,6 +9,11 @@
 - **LangGraph**: Framework for building stateful, multi-agent workflows
   - Version: langgraph>=0.1.0
   - Used for: Workflow orchestration, agent coordination, and state management
+- **Click**: Command-line interface framework
+  - Version: click>=8.0.0
+  - Used for: CLI implementation and argument parsing
+- **Agent Playground Framework**: Custom framework for agent development
+  - Used for: Configuration management, state handling, and workflow orchestration
 
 ### Language Models
 - **OpenRouter**
@@ -70,28 +75,30 @@
 
 ### Project Structure
 ```
-source_of_wealth_agent/
-├── agents/                 # Agent implementations
-│   ├── id_verification_agent.py
-│   ├── payslip_verification_agent.py
-│   ├── web_references_agent.py
-│   ├── financial_reports_agent.py
-│   ├── corroboration_agents.py
-│   ├── human_advisory_agent.py
-│   ├── risk_assessment_agent.py
-│   └── report_generation_agent.py
-├── core/                   # Core functionality
-│   ├── state.py            # State management
-│   └── models.py           # Model initialization
-├── notebooks/              # Jupyter notebooks
-│   ├── source_of_wealth_checker.py
-│   └── source_of_wealth_checker_refactored.py
-├── workflow/               # Workflow orchestration
-│   ├── orchestration.py    # Workflow definition
-│   ├── tracing.py          # Tracing functionality
-│   ├── runner.py           # Workflow execution
-│   └── visualization.py    # Visualization tools
-└── requirements.txt        # Project dependencies
+/workspaces/agent-playground/
+├── src/agent_playground/
+│   ├── sow/                    # SOW-specific implementation
+│   │   ├── cli.py              # ✅ NEW: CLI implementation
+│   │   ├── workflow.py         # ✅ NEW: Refactored workflow
+│   │   ├── state.py            # ✅ NEW: Enhanced state management
+│   │   └── agents/             # SOW agent implementations
+│   ├── core/                   # Framework core functionality
+│   ├── utils/                  # Configuration and utilities
+│   └── workflows/              # Workflow templates and builders
+├── source_of_wealth_agent/     # Original SOW implementation
+│   ├── agents/                 # Agent implementations
+│   ├── core/                   # Core functionality
+│   ├── workflow/               # Workflow orchestration
+│   └── notebooks/              # Jupyter notebooks
+├── documents/                  # ✅ NEW: Test documents directory
+├── memory-bank/                # Project documentation
+└── pyproject.toml              # ✅ NEW: CLI entry point configuration
+```
+
+### ✅ NEW: CLI Entry Points
+```toml
+[project.scripts]
+sow-agent = "agent_playground.sow.cli:main"
 ```
 
 ## Technical Constraints
